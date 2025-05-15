@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Micro:bit Snake Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      color: #333;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      max-width: 600px;
+      width: 100%;
+    }
+    .header h1 {
+      color: #4285F4;
+      margin-bottom: 5px;
+    }
+    .header p {
+      color: #777;
+      margin: 0 0 15px;
+    }
+    .game-board {
+      display: grid;
+      grid-template-columns: repeat(5,1fr);
+      grid-template-rows: repeat(5,1fr);
+      gap: 2px;
+      width: 250px;
+      height: 250px;
+      background-color: #e8e8e8;
+      border: 2px solid #bdbdbd;
+      border-radius: 5px;
+      padding: 5px;
+      margin-bottom: 15px;
+    }
+    .cell {
+      background-color: #f5f5f5;
+      border-radius: 3px;
+      width: 100%;
+      height: 100%;
+    }
+    .cell.snake { background-color: #3AA757; }
+    .cell.snake-head { background-color: #2A8E3C; }
+    .cell.treat {
+      background-color: #EA4335;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .game-container { position: relative; }
+    .game-over-screen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.7);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      border-radius: 5px;
+      display: none;
+      z-index: 10;
+    }
+    .game-over-screen h2 { margin: 0 0 10px; font-size: 2em; }
+    .game-over-screen p { margin: 5px 0; font-size: 1.2em; }
+    .win-message { color: #FBBC05; }
+    .lose-message { color: #EA4335; }
+    .restart-message {
+      margin-top: 15px;
+      font-style: italic;
+      color: #ccc;
+      width: 100%;
+      text-align: center;
+    }
+    .serial-status {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #f5f5f5;
+      border-radius: 5px;
+      width: 100%;
+      text-align: center;
+      font-size: 0.9em;
+      color: #777;
+    }
+    .serial-status .connected { color: #3AA757; }
+    .serial-status .disconnected { color: #EA4335; }
+    .simulation-controls {
+      margin-top: 20px;
+    }
+    .simulation-controls button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 5px;
+      background-color: #4285F4;
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.2s;
+    }
+    .simulation-controls button:hover { background-color: #3367D6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Micro:bit Snake Game</h1>
+      <p>(Tilt your Micro:bit to play!)</p>
+    </div>
+
+    <div class="game-container">
+      <div class="game-board" id="game-board"></div>
+
+      <div class="game-over-screen" id="game-over-screen">
+        <h2 id="game-over-title">Game Over</h2>
+        <p id="final-score">Score: 0</p>
+        <p id="final-time">Time: 0.00s</p>
+        <p id="game-result" class="win-message">You won!</p>
+        <p class="restart-message">Press Button B on your Micro:bit to restart</p>
+      </div>
+    </div>
+
+    <div class="serial-status" id="serial-status">
+      <span class="disconnected">Waiting for Micro:bit connection…</span>
+    </div>
+
+    <div class="simulation-controls">
+      <button id="btn-connect">Connect to Micro:bit</button>
+    </div>
+  </div>
+
+  <script>
+    let gameBoard, gameOverScreen, gameOverTitle, finalScore, finalTime, gameResult;
+
+    function createGameBoard(){
+      gameBoard.innerHTML = '';
+      for(let y=0; y<5; y++){
+        for(let x=0; x<5; x++){
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.id = `cell-${x}-${y}`;
+          gameBoard.appendChild(cell);
+        }
+      }
+    }
+
+    function updateGameBoard(matrix, head) {
+      for (let y = 0; y < 5; y++) {
+        for (let x = 0; x < 5; x++) {
+          const cell = document.getElementById(`cell-${x}-${y}`);
+          cell.className = 'cell';
+          if (head && x === head.x && y === head.y) {
+            cell.classList.add('snake-head');
+          } else if (matrix[y][x] === 1) {
+            cell.classList.add('snake');
+          } else if (matrix[y][x] === 2) {
+            cell.classList.add('treat');
+          }
+        }
+      }
+    }
+
+    function showGameOver(reason, score, time){
+      gameOverScreen.style.display = 'flex';
+      if (reason === 'WIN') {
+        gameOverTitle.textContent = 'You Win!';
+        gameResult.textContent = 'Congratulations!';
+        gameResult.className = 'win-message';
+      } else {
+        gameOverTitle.textContent = 'Game Over';
+        gameResult.textContent = 'Snake collision!';
+        gameResult.className = 'lose-message';
+      }
+      finalScore.textContent = `Score: ${score}`;
+      finalTime.textContent  = `Time: ${time}s`;
+    }
+
+    function hideGameOver(){
+      gameOverScreen.style.display = 'none';
+    }
+
+    function processSerialData(data){
+      try {
+        const d = JSON.parse(data);
+        switch(d.type){
+          case 'display':
+            updateGameBoard(d.matrix, d.head);
+            break;
+          case 'gameOver':
+            showGameOver(d.reason, d.score, d.time);
+            break;
+          case 'reset':
+            hideGameOver();
+            updateGameBoard(Array(5).fill().map(()=>Array(5).fill(0)), null);
+            break;
+        }
+      } catch(e){
+        console.error('Invalid JSON:', e, data);
+      }
+    }
+
+    async function connectToMicrobit() {
+      try {
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        document.getElementById('serial-status').innerHTML =
+          '<span class="connected">Connected to Micro:bit</span>';
+
+        const textDecoder = new TextDecoderStream();
+        port.readable.pipeTo(textDecoder.writable);
+
+        const reader = textDecoder.readable
+          .pipeThrough(new TransformStream(new LineBreakTransformer()))
+          .getReader();
+
+        while(true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) processSerialData(value);
+        }
+      } catch(err) {
+        console.error('Serial error:', err);
+        document.getElementById('serial-status').innerHTML =
+          '<span class="disconnected">Connection failed. Please try again.</span>';
+      }
+    }
+
+    class LineBreakTransformer {
+      constructor() { this.container = ''; }
+      transform(chunk, controller) {
+        this.container += chunk;
+        const lines = this.container.split('\n');
+        this.container = lines.pop();
+        lines.forEach(line => controller.enqueue(line));
+      }
+      flush(controller) {
+        controller.enqueue(this.container);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      gameBoard      = document.getElementById('game-board');
+      gameOverScreen = document.getElementById('game-over-screen');
+      gameOverTitle  = document.getElementById('game-over-title');
+      finalScore     = document.getElementById('final-score');
+      finalTime      = document.getElementById('final-time');
+      gameResult     = document.getElementById('game-result');
+
+      createGameBoard();
+      document.getElementById('btn-connect')
+        .addEventListener('click', connectToMicrobit);
+    });
+  </script>
+</body>
+</html>
