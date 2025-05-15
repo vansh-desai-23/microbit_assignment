@@ -1,4 +1,4 @@
-# Microbti Assignment
+# Microbit Assignment
 
 Project by:
 1) BT2024134: Vansh Desai
